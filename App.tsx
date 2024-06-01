@@ -1,117 +1,89 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, { useRef, useEffect } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { RNCamera } from 'react-native-camera';
+import TcpSocket from 'react-native-tcp-socket';
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
-import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+const App = () => {
+  const cameraRef = useRef(null);
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+  const server = TcpSocket.createServer(function(socket) {
+  
+  socket.on('data', (data) => {
+    if(data == 'takePicture\n') {
+      takePicture().then(r => {
+        if(r === null) {
+          socket.write('The picture was not taken');
+        } else {
+          socket.write(r);
+        }
+      });
+    } else if(data == 'close\n') {
+      server.close();
+    } else {
+      socket.write('Echo server ' + data);
+    }
+    
+  });
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+  socket.on('error', (error) => {
+    console.log('An error ocurred with client socket ', error);
+  });
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+  socket.on('close', (error) => {
+      console.log('Closed connection with ', socket.address());
+    });
+  }).listen({ port: 12345, host: '0.0.0.0' });
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  server.on('error', (error) => {
+    console.log('An error ocurred with the server', error);
+  });
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  server.on('close', () => {
+    console.log('Server closed connection');
+  });
+
+  const takePicture = async () => {
+    if (cameraRef.current) {
+      const options = { quality: 0.5, base64: true };
+      cameraRef.current.resumePreview();
+      const data = await cameraRef.current.takePictureAsync(options);
+      cameraRef.current.pausePreview();
+      console.log(data.uri);
+      return data.base64;
+    }
+
+    return null;
   };
 
+  useEffect(() => {
+    return () => {
+      console.log("Closing server in useEffect!");
+      server.close();
+    }
+  }, []);
+
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+    <View style={styles.container}>
+      <RNCamera
+        ref={cameraRef}
+        style={styles.preview}
+        type={RNCamera.Constants.Type.back}
+        captureAudio={false}
       />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    flexDirection: 'column',
+    backgroundColor: 'black',
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
+  preview: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
   },
 });
 
